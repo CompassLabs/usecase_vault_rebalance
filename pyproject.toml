@@ -1,0 +1,13 @@
+[project]
+name = "vault-rebalance"
+version = "0.1.0"
+description = "Rebalance vault positions using the Compass API"
+requires-python = ">=3.13"
+dependencies = [
+    "compass-api-sdk>=0.3.8",
+    "dotenv>=0.9.9",
+    "plotly>=6.1.0",
+    "ruff>=0.11.10",
+    "streamlit>=1.45.1",
+    "web3>=7.11.1",
+]
