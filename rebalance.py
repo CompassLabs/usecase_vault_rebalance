@@ -6,10 +6,7 @@ from compass_api_sdk.models import (
     MulticallActionType,
     MorphoWithdrawParams,
     MorphoDepositParams,
-    IncreaseAllowanceParams,
-    IncreaseAllowanceParamsContractName,
     MorphoSetVaultAllowanceParams,
-    # IncreaseAllowanceParamsContract = IncreaseAllowanceParams
 )
 from dotenv import load_dotenv
 import os
