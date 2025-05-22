@@ -77,7 +77,7 @@ for i, position in enumerate(user_positions):
         )
     )
 
-compass.transaction_batching.execute(
+unsigned_transaction = compass.transaction_batching.execute(
     chain=CHAIN,
     sender=ADDRESS,
     signed_authorization=signed_auth.model_dump(),

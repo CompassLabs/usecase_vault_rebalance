@@ -23,9 +23,7 @@ from eth_account import Account
 
 from web3 import Web3
 
-w3 = Web3(
-    Web3.HTTPProvider(os.environ.get("ETH_RPC"))
-)
+w3 = Web3(Web3.HTTPProvider(os.environ.get("ETH_RPC")))
 
 load_dotenv()
 
