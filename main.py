@@ -9,9 +9,15 @@ import os
 load_dotenv()
 
 
-compass = CompassAPI(
+
+
+
+
+
+compass: CompassAPI = CompassAPI(
     api_key_auth=os.environ.get("COMPASS_KEY"),
 )
+
 
 
 st.set_page_config(layout="wide")
@@ -20,7 +26,7 @@ address = st.text_input(
     value="0xa829B388A3DF7f581cE957a95edbe419dd146d1B",
 )
 chain = st.selectbox(
-    label="Chain", options=[Chain.ETHEREUM_MAINNET, Chain.ARBITRUM_MAINNET]
+    label="Chain", options=[Chain.ETHEREUM_MAINNET, Chain.BASE_MAINNET], index=1
 )
 
 
