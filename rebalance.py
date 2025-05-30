@@ -83,4 +83,6 @@ unsigned_transaction = compass.transaction_batching.execute(
     signed_authorization=signed_auth.model_dump(),
     actions=actions,
 )
+
+print(unsigned_transaction)
 # CODE END
