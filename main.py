@@ -2,14 +2,22 @@ import streamlit as st
 import plotly.graph_objects as go
 
 from compass_api_sdk import CompassAPI
-from compass_api_sdk.models import Chain, TokenEnum, TokenAddressToken, MorphoVault
+from compass_api_sdk.models import (
+    Chain,
+    TokenEnum,
+    TokenAddressToken,
+    MorphoVault,
+    AaveUserPositionPerTokenToken,
+)
 from dotenv import load_dotenv
 import os
+from aaa import do_rebalance
+import json
 
 load_dotenv()
 
 
-compass = CompassAPI(
+compass: CompassAPI = CompassAPI(
     api_key_auth=os.environ.get("COMPASS_KEY"),
 )
 
@@ -19,22 +27,25 @@ address = st.text_input(
     label="Choose the deposit address",
     value="0xa829B388A3DF7f581cE957a95edbe419dd146d1B",
 )
-chain = st.selectbox(
-    label="Chain", options=[Chain.ETHEREUM_MAINNET, Chain.ARBITRUM_MAINNET]
-)
+chain = st.selectbox(label="Chain", options=[Chain.ARBITRUM_MAINNET], index=0)
 
 
-address2vault: dict[str, MorphoVault] = {
-    vault.address for vault in compass.morpho.vaults().vaults
+TOKENS = [TokenEnum.USDC, TokenEnum.WETH, TokenEnum.USDT, TokenEnum.LINK]
+
+token_prices = {
+    token: float(compass.token.price(chain=chain, token=token).price)
+    for token in TOKENS
 }
-user_positions = compass.morpho.user_position(
-    chain=chain,
-    user_address=address,
-).vault_positions
+
+st.text(token_prices)
 
 user_positions = [
-    position for position in user_positions if position.vault.asset.symbol == "USDC"
+    compass.aave_v3.user_position_per_token(
+        chain=Chain.ARBITRUM_MAINNET, user=address, token=token
+    )
+    for token in TOKENS
 ]
+user_positions = [u for u in user_positions if float(u.token_balance) != 0.0]
 
 
 st.title("Vault rebalance demo")
@@ -48,15 +59,24 @@ cols = st.columns(3)
 with cols[0]:
     st.subheader("Current State")
     for i, position in enumerate(user_positions):
+        if float(position.token_balance) == 0.0:
+            continue
         c = st.container(border=True, height=200)
-        c.markdown(f"#### {position.vault.name}")
-        c.text(position.vault.address)
-        c.markdown(f"**{round(float(position.state.assets_usd), 2)}** USD deposits")
-        c.markdown(f"**{round(float(position.vault.daily_apys.apy) * 100, 2)} %** APY")
-
-    deposits_arr = [pos.state.assets_usd for pos in user_positions]
-    vault_names = [pos.vault.name for pos in user_positions]
-    vault_symbol = [position.vault.asset.name for pos in user_positions]
+        c.markdown(f"#### {TOKENS[i].value}")
+        c.markdown(f"{round(float(position.token_balance), 8)} balance")
+        c.markdown(
+            f"{round(float(position.token_balance) * token_prices[TOKENS[i]], 4)} USD"
+        )
+        c.markdown(f"{round(float(position.liquidity_rate) * 100, 2)} % interest")
+    #     c.markdown(f"**{round(float(position.state.assets_usd), 2)}** USD deposits")
+    #     c.markdown(f"**{round(float(position.vault.daily_apys.apy) * 100, 2)} %** APY")
+    #
+    deposits_arr = [
+        float(pos.token_balance) * token_prices[TOKENS[i]]
+        for i, pos in enumerate(user_positions)
+    ]
+    vault_names = [TOKENS[i].value for i, pos in enumerate(user_positions)]
+    vault_symbol = [TOKENS[i].value for i, pos in enumerate(user_positions)]
     trace = go.Pie(
         labels=vault_names,
         values=deposits_arr,
@@ -68,17 +88,24 @@ with cols[1]:
     st.subheader("Target Distribution")
     sliders = []
     for i, position in enumerate(user_positions):
+        if float(position.token_balance) == 0.0:
+            continue
         c = st.container(border=True, height=200)
-        c.markdown(f"#### {position.vault.name}")
+        c.markdown(f"#### {TOKENS[i].value}")
+        c.markdown(
+            f"Current percentage: {round(deposits_arr[i] / sum(deposits_arr) * 100, 2)} %"
+        )
         value = c.slider(
-            key=f"slider_{position.vault.address}",
+            key=f"slider_{TOKENS[i].value}",
             label="Choose percentage",
-            value=100 if i == 0 else 0,
+            value=deposits_arr[i] / sum(deposits_arr) * 100,
+            min_value=0.0,
+            max_value=100.0,
         )
         sliders.append(value)
 
     sum = sum(sliders)
-    if sum != 100:
+    if sum < 99.8 or sum > 100.2:
         st.warning("Rebalance percentages need to add up to 100%")
     else:
         st.success("This is a success message!", icon="✅")
@@ -87,28 +114,8 @@ with cols[1]:
             st.text(
                 "Here's the single transaction to rebalance all positions.\nSign this transaction with the wallet of your choice and then submit to chain."
             )
-            st.code("""{
-  "chain_id": 1,
-  "data": "0x174dea710000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000c000000000000000000000000000000000000000000000000000000000000001e000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000420000000000000000000000000000000000000000000000000000000000000052000000000000000000000000000000000000000000000000000000000000006200000000000000000000000004f460bb11cf958606c69a963b4a17f9daeeea8b60000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000064ba0876520000000000000000000000000000000000000000000000001b0f15140131e0b3000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b0000000000000000000000000000000000000000000000000000000000000000000000000000000064964e162aa18d32f91ea5b24a09529f811aeb8e0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000064ba087652000000000000000000000000000000000000000000000000188b9e77690c5cab000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b00000000000000000000000000000000000000000000000000000000000000000000000000000000341193ed21711472e71aeca4a942123452bd0dda0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000064ba08765200000000000000000000000000000000000000000000000032e5a79e1eba07ee000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b000000000000000000000000a829b388a3df7f581ce957a95edbe419dd146d1b00000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000044095ea7b30000000000000000000000004f460bb11cf958606c69a963b4a17f9daeeea8b6000000000000000000000000000000000000000000000000000000000022283000000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000044095ea7b300000000000000000000000064964e162aa18d32f91ea5b24a09529f811aeb8e00000000000000000000000000000000000000000000000000000000002d8aeb00000000000000000000000000000000000000000000000000000000000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000341193ed21711472e71aeca4a942123452bd0dda000000000000000000000000000000000000000000000000000000000022283000000000000000000000000000000000000000000000000000000000,
-  "from_": "0xa829B388A3DF7f581cE957a95edbe419dd146d1B",
-  "gas": 999999,
-  "to": "0xa829B388A3DF7f581cE957a95edbe419dd146d1B",
-  "value": 0,
-  "nonce": 68,
-  "max_fee_per_gas": 12370297316,
-  "max_priority_fee_per_gas": 518800,
-  "authorization_list": [
-    {
-      "nonce": 1,
-      "address": "0xcA11bde05977b3631167028862bE2a173976CA11",
-      "chain_id": 1,
-      "r": 33527870694357127069976908757502661299880413309024825381783287539601632427506,
-      "s": 38992836491079257330289091254367165068959548728858929102784540798528633418244,
-      "y_parity": 1
-    }
-  ]
-}
-""")
+            result = do_rebalance()
+            st.code(json.dumps(result, indent=4))
 
     with cols[2]:
         st.subheader("Batched Transaction")
